@@ -8,6 +8,7 @@ import { calculateRetention } from "@/lib/algorithms/decay";
 import { buildAdjacencyList } from "@/lib/algorithms/graph";
 import { selectReviewQuestion } from "@/lib/algorithms/reviewSelection";
 import { getStudentEnrolledCourseIds } from "@/lib/enrollment";
+import { getOrEnsureProfile } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -28,12 +29,8 @@ export default async function PracticePage({ searchParams }: PageProps) {
   const { conceptId, courseId: paramCourseId } = (await searchParams) ?? {};
 
   // Parallelize profile check, enrolled courses, and platform courses
-  const [profileRes, enrolledCourseIds, coursesRes] = await Promise.all([
-    supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single(),
+  const [profile, enrolledCourseIds, coursesRes] = await Promise.all([
+    getOrEnsureProfile(supabase, user),
     getStudentEnrolledCourseIds(
       supabase,
       user.id,
@@ -45,7 +42,10 @@ export default async function PracticePage({ searchParams }: PageProps) {
       .order("title"),
   ]);
 
-  if (profileRes.data?.role !== "student") redirect("/login");
+  if (profile?.role === "teacher") {
+    redirect("/teacher");
+  }
+
 
   const allCourses = coursesRes.data ?? [];
   const validCourses = allCourses.filter((c) => enrolledCourseIds.includes(c.id));

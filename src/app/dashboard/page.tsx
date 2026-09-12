@@ -4,6 +4,7 @@ import { computeRisk, inactivityScore, declineScore } from "@/lib/algorithms/ris
 import { getDaysSince } from "@/lib/utils";
 import { calculateRetention } from "@/lib/algorithms/decay";
 import { getStudentEnrolledCourseIds } from "@/lib/enrollment";
+import { getOrEnsureProfile } from "@/lib/auth";
 import { DashboardClientView } from "./DashboardClientView";
 
 export const dynamic = "force-dynamic";
@@ -24,13 +25,9 @@ export default async function DashboardPage({ searchParams }: PageProps) {
   if (!user) redirect("/login");
 
   // Parallelize initial queries (profile, enrollments, courses, recent attempts)
-  const [profileRes, enrolledCourseIds, allCoursesRes, recentAttemptsRes] =
+  const [profile, enrolledCourseIds, allCoursesRes, recentAttemptsRes] =
     await Promise.all([
-      supabase
-        .from("profiles")
-        .select("full_name, role")
-        .eq("id", user.id)
-        .single(),
+      getOrEnsureProfile(supabase, user),
       getStudentEnrolledCourseIds(
         supabase,
         user.id,
@@ -48,8 +45,8 @@ export default async function DashboardPage({ searchParams }: PageProps) {
         .limit(10),
     ]);
 
-  const profile = profileRes.data;
-  if (profile?.role !== "student") redirect("/login");
+  if (profile?.role === "teacher") redirect("/teacher");
+
 
   const totalPlatformCourses = allCoursesRes.data ?? [];
 

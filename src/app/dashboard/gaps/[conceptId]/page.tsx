@@ -13,6 +13,7 @@ import { MasteryExplainerModal } from "@/components/mastery/MasteryExplainerModa
 import { ArrowLeft, BookOpen, Zap } from "lucide-react";
 import { getDaysSince, cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
+import { getOrEnsureProfile } from "@/lib/auth";
 import { z } from "zod";
 
 export const dynamic = "force-dynamic";
@@ -25,7 +26,7 @@ export async function generateMetadata() {
   return { title: "Gap Analysis — LearnPulse" };
 }
 
-export default async function GapPage({ params }: PageProps) {
+export default async function GapDetailPage({ params }: PageProps) {
   const { conceptId } = await params;
   if (!z.string().uuid().safeParse(conceptId).success) {
     notFound();
@@ -37,13 +38,9 @@ export default async function GapPage({ params }: PageProps) {
   if (!user) redirect("/login");
 
   // Parallelize initial queries (profile, targetConcept, courses, targetMastery)
-  const [profileRes, targetConceptRes, coursesRes, targetMasteryRes] =
+  const [profile, targetConceptRes, coursesRes, targetMasteryRes] =
     await Promise.all([
-      supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", user.id)
-        .single(),
+      getOrEnsureProfile(supabase, user),
       supabase
         .from("concepts")
         .select("id, name, description, difficulty, course_id")
@@ -61,7 +58,7 @@ export default async function GapPage({ params }: PageProps) {
         .maybeSingle(),
     ]);
 
-  if (profileRes.data?.role !== "student") redirect("/login");
+  if (profile?.role === "teacher") redirect("/teacher");
 
   const targetConcept = targetConceptRes.data;
   if (!targetConcept) notFound();

@@ -1,6 +1,7 @@
 import { redirect, notFound } from "next/navigation";
 import { createClient } from "@/utils/supabase/server";
 import { CourseAuthoringClient } from "./CourseAuthoringClient";
+import { getOrEnsureProfile } from "@/lib/auth";
 import { z } from "zod";
 
 export const dynamic = "force-dynamic";
@@ -41,13 +42,9 @@ export default async function CourseAuthoringPage({ params }: PageProps) {
 
   if (!user) redirect("/login");
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
+  const profile = await getOrEnsureProfile(supabase, user);
+  if (profile?.role === "student") redirect("/dashboard");
 
-  if (profile?.role !== "teacher") redirect("/dashboard");
 
   // Fetch course ensuring this teacher owns it
   const { data: course } = await supabase

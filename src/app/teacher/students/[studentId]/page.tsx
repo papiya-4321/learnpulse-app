@@ -10,6 +10,7 @@ import { ArrowLeft, BookOpen, Shield } from "lucide-react";
 import { getDaysSince, cn } from "@/lib/utils";
 import { CourseSelector } from "@/components/CourseSelector";
 import { getStudentEnrolledCourseIds } from "@/lib/enrollment";
+import { getOrEnsureProfile } from "@/lib/auth";
 import { buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { z } from "zod";
@@ -49,31 +50,23 @@ export default async function TeacherStudentPage({
   if (!user) redirect("/login");
 
   // Parallelize initial queries (teacher role, student profile, student enrollments, teacher courses)
-  const [
-    teacherProfileRes,
-    studentProfileRes,
-    studentEnrolledCourseIds,
-    coursesRes,
-  ] = await Promise.all([
-    supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single(),
-    supabase
-      .from("profiles")
-      .select("full_name, role")
-      .eq("id", studentId)
-      .single(),
-    getStudentEnrolledCourseIds(supabase, studentId),
-    supabase
-      .from("courses")
-      .select("id, title, subject")
-      .eq("teacher_id", user.id)
-      .order("title"),
-  ]);
+  const [teacherProfile, studentProfileRes, studentEnrolledCourseIds, coursesRes] =
+    await Promise.all([
+      getOrEnsureProfile(supabase, user),
+      supabase
+        .from("profiles")
+        .select("full_name, role")
+        .eq("id", studentId)
+        .single(),
+      getStudentEnrolledCourseIds(supabase, studentId),
+      supabase
+        .from("courses")
+        .select("id, title, subject")
+        .eq("teacher_id", user.id)
+        .order("title"),
+    ]);
 
-  if (teacherProfileRes.data?.role !== "teacher") redirect("/login");
+  if (teacherProfile?.role === "student") redirect("/dashboard");
 
   const studentProfile = studentProfileRes.data;
   if (!studentProfile || studentProfile.role !== "student") notFound();

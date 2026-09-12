@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/utils/supabase/server";
+import { getOrEnsureProfile } from "@/lib/auth";
 
 export default async function RootPage() {
   const supabase = await createClient();
@@ -7,12 +8,9 @@ export default async function RootPage() {
 
   if (!user) redirect("/login");
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
+  const profile = await getOrEnsureProfile(supabase, user);
 
   if (profile?.role === "teacher") redirect("/teacher");
   redirect("/dashboard");
 }
+

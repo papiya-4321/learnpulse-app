@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/utils/supabase/server";
 import { getStudentEnrolledCourseIds } from "@/lib/enrollment";
+import { getOrEnsureProfile } from "@/lib/auth";
 import { CourseCatalogClient, type CatalogCourse } from "./CourseCatalogClient";
 
 export const dynamic = "force-dynamic";
@@ -19,12 +20,8 @@ export default async function CourseCatalogPage() {
   if (!user) redirect("/login");
 
   // 1. Parallelize initial queries (profile, enrollments, courses)
-  const [profileRes, enrolledIds, coursesDataRes] = await Promise.all([
-    supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single(),
+  const [profile, enrolledIds, coursesDataRes] = await Promise.all([
+    getOrEnsureProfile(supabase, user),
     getStudentEnrolledCourseIds(
       supabase,
       user.id,
@@ -36,7 +33,8 @@ export default async function CourseCatalogPage() {
       .order("title"),
   ]);
 
-  if (profileRes.data?.role !== "student") redirect("/login");
+  if (profile?.role === "teacher") redirect("/teacher");
+
 
   const courses = coursesDataRes.data ?? [];
 
