@@ -18,6 +18,7 @@ import { CourseSelector } from "@/components/CourseSelector";
 import { CreateCourseModal } from "@/components/teacher/CreateCourseModal";
 import { DeleteCourseButton } from "@/components/teacher/DeleteCourseButton";
 import { getTeacherDashboardData } from "@/lib/teacher/dashboardService";
+import { getOrEnsureProfile } from "@/lib/auth";
 import { buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
@@ -40,12 +41,9 @@ export default async function TeacherPage({ searchParams }: PageProps) {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
-  if (profile?.role !== "teacher") redirect("/login");
+  const profile = await getOrEnsureProfile(supabase, user);
+  if (profile?.role === "student") redirect("/dashboard");
+
 
   const dbCourseId = (user.user_metadata?.selectedCourseId as string) || null;
 

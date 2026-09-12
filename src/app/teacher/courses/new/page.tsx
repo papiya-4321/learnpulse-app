@@ -5,6 +5,7 @@ import { ArrowLeft, BookPlus } from "lucide-react";
 import { CreateCourseForm } from "./CreateCourseForm";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { getOrEnsureProfile } from "@/lib/auth";
 
 export const metadata = {
   title: "Create New Course — LearnPulse",
@@ -19,13 +20,9 @@ export default async function NewCoursePage() {
 
   if (!user) redirect("/login");
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
+  const profile = await getOrEnsureProfile(supabase, user);
+  if (profile?.role === "student") redirect("/dashboard");
 
-  if (profile?.role !== "teacher") redirect("/dashboard");
 
   return (
     <div className="px-8 py-8 max-w-2xl mx-auto space-y-8 animate-slide-up">
