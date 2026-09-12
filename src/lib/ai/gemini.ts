@@ -6,6 +6,7 @@ import {
   misconceptionOutputSchema,
   dagSynthesisOutputSchema,
   conceptBiteSchema,
+  synthesizedQuestionSchema,
   type DiagnosisInput,
   type DiagnosisOutput,
   type MisconceptionOutput,
@@ -34,10 +35,11 @@ export {
 };
 
 // Model configuration
-const PRIMARY_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
-const FALLBACK_MODELS = [PRIMARY_MODEL, "gemini-3.6-flash"].filter(
-  (model, index, arr) => arr.indexOf(model) === index
-);
+const PRIMARY_MODEL = process.env.GEMINI_MODEL || "gemini-3.6-flash";
+const FALLBACK_MODELS = [
+  PRIMARY_MODEL,
+  "gemini-3.6-flash",
+].filter((model, index, arr) => arr.indexOf(model) === index);
 const CACHE_THRESHOLD = 5;
 
 // Shared client helpers
@@ -59,14 +61,14 @@ function getModel(modelName: string, temperature = 0.3, maxOutputTokens = 4000):
   });
 }
 
-// Repairs JSON truncated mid-stream by token limit boundaries
-function repairTruncatedJson(jsonStr: string): string {
+// Attempts to close open JSON quotes and container delimiters
+function attemptCloseJson(str: string): string {
   let inString = false;
   let isEscaped = false;
   const stack: string[] = [];
 
-  for (let i = 0; i < jsonStr.length; i++) {
-    const char = jsonStr[i];
+  for (let i = 0; i < str.length; i++) {
+    const char = str[i];
     if (inString) {
       if (isEscaped) {
         isEscaped = false;
@@ -88,21 +90,68 @@ function repairTruncatedJson(jsonStr: string): string {
     }
   }
 
-  let repaired = jsonStr.trim();
+  let result = str.trim();
   if (inString) {
-    repaired += '"';
+    result += '"';
   }
 
-  // Remove trailing dangling commas e.g. {"key": "val",
-  repaired = repaired.replace(/,\s*$/, "");
+  // Fix dangling keys or colons e.g. "key": -> "key": null
+  result = result.replace(/:\s*$/, ": null");
+  // Remove dangling commas e.g. [1, 2, -> [1, 2
+  result = result.replace(/,\s*$/, "");
 
-  while (stack.length > 0) {
-    const last = stack.pop();
-    if (last === "{") repaired += "}";
-    else if (last === "[") repaired += "]";
+  // Close open brackets/braces in reverse order
+  for (let i = stack.length - 1; i >= 0; i--) {
+    const open = stack[i];
+    if (open === "{") result += "}";
+    else if (open === "[") result += "]";
   }
 
-  return repaired;
+  return result;
+}
+
+// Repairs JSON truncated mid-stream by token limit boundaries
+function repairTruncatedJson(jsonStr: string): string {
+  let text = jsonStr.trim();
+  // Strip markdown fences
+  text = text.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim();
+
+  // 1. Immediate attempt with simple closure
+  const immediate = attemptCloseJson(text);
+  try {
+    JSON.parse(immediate);
+    return immediate;
+  } catch {}
+
+  // 2. Progressive truncation repair:
+  // If closing at the end failed (e.g. truncated inside an incomplete key/property name),
+  // step backwards to boundary delimiters where a valid property or item ended.
+  const maxLookback = Math.min(text.length, 3000);
+  const minLength = Math.max(1, text.length - maxLookback);
+
+  for (let i = text.length - 1; i >= minLength; i--) {
+    const ch = text[i];
+    if (ch === "," || ch === "{" || ch === "[" || ch === "\n" || ch === "}" || ch === "]") {
+      const candidate = text.substring(0, i);
+      const closed = attemptCloseJson(candidate);
+      try {
+        JSON.parse(closed);
+        return closed;
+      } catch {}
+    }
+  }
+
+  // 3. Fallback: single-character step back
+  for (let i = text.length - 1; i >= Math.max(1, text.length - 500); i--) {
+    const candidate = text.substring(0, i);
+    const closed = attemptCloseJson(candidate);
+    try {
+      JSON.parse(closed);
+      return closed;
+    } catch {}
+  }
+
+  return immediate;
 }
 
 // Executes Gemini request with model fallback and JSON structure repair
@@ -218,7 +267,15 @@ export async function synthesizeDag(
   topicText: string,
   courseTitle?: string
 ): Promise<DagSynthesisOutput & { isAiGenerated: boolean }> {
-  const raw = await callGeminiRaw(buildDagSynthesisPrompt(topicText, courseTitle), 0.4, 8000);
+  const raw = await callGeminiRaw(buildDagSynthesisPrompt(topicText, courseTitle), 0.2, 4000);
+
+  // Filter out any incomplete question objects that may have been cut off during generation
+  if (raw && typeof raw === "object" && "questions" in raw && Array.isArray((raw as { questions?: unknown }).questions)) {
+    (raw as { questions: unknown[] }).questions = (raw as { questions: unknown[] }).questions.filter(
+      (q) => synthesizedQuestionSchema.safeParse(q).success
+    );
+  }
+
   const validated = raw ? dagSynthesisOutputSchema.safeParse(raw) : null;
 
   if (validated?.success) {

@@ -13,15 +13,8 @@ import { cn } from "@/lib/utils";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import {
-  Dialog,
-  DialogTrigger,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
+import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { toast } from "react-toastify";
 
 interface SyllabusIngestionModalProps {
   courseId: string;
@@ -57,13 +50,16 @@ export function SyllabusIngestionModal({
     setLoading(true);
     setError(null);
 
+    // If teacher selected a preset or entered "Subject Name: ...", infer that subject title
+    const inferredTitle = text.includes(":") ? text.split(":")[0].trim() : undefined;
+
     try {
       const res = await fetch("/api/ai/synthesize-dag", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           topicText: text,
-          courseTitle,
+          courseTitle: inferredTitle || courseTitle,
           courseSubject,
           targetCourseId: courseId,
           persist: true,
@@ -75,18 +71,21 @@ export function SyllabusIngestionModal({
         throw new Error(data.error ?? `Synthesis failed: ${res.status}`);
       }
 
+      const count = data.concepts?.length ?? 0;
+      const title = data.courseTitle || inferredTitle || "course";
+      toast.success(`Successfully updated ${title} with ${count} lessons!`);
       setSuccess(true);
       setTimeout(() => {
         setIsOpen(false);
         setSuccess(false);
         setTopicText("");
         if (onSuccess) onSuccess();
-        router.refresh();
-      }, 1200);
+        window.location.reload();
+      }, 800);
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Syllabus ingestion failed",
-      );
+      const msg = err instanceof Error ? err.message : "Syllabus ingestion failed";
+      setError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }

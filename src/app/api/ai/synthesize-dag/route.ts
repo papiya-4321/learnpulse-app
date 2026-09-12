@@ -100,19 +100,25 @@ export async function POST(req: NextRequest) {
     let finalCourseSubject = courseSubject?.trim() || "Computer Science";
 
     if (!effectiveConcepts || effectiveConcepts.length === 0) {
+      // If topicText has a prefix like "Computer Networks: ...", honor that subject over any stale course title
+      const topicInferredTitle = topicText?.includes(":")
+        ? topicText.split(":")[0].trim()
+        : undefined;
+      const targetSynthesisTitle = topicInferredTitle || courseTitle?.trim();
+
       // Free-form synthesis needed (preview mode)
       const effectiveTopicText =
         topicText && topicText.trim().length >= 5
           ? topicText.trim()
-          : `Comprehensive university curriculum and foundational concepts for the course: ${courseTitle}`;
+          : `Comprehensive university curriculum and foundational concepts for the course: ${targetSynthesisTitle}`;
 
-      const dagResult = await synthesizeDag(effectiveTopicText, courseTitle);
+      const dagResult = await synthesizeDag(effectiveTopicText, targetSynthesisTitle);
       effectiveConcepts = dagResult.concepts;
       effectiveEdges = dagResult.edges;
       effectiveQuestions = dagResult.questions ?? [];
       isAiGenerated = dagResult.isAiGenerated;
-      finalCourseTitle = courseTitle?.trim() || dagResult.courseTitle;
-      finalCourseSubject = courseSubject?.trim() || dagResult.courseSubject;
+      finalCourseTitle = dagResult.courseTitle || targetSynthesisTitle || "New Course";
+      finalCourseSubject = dagResult.courseSubject || courseSubject?.trim() || "Computer Science";
     }
 
     // Cycle detection via Kahn's algorithm
@@ -207,6 +213,24 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Target course not found or unauthorized" }, { status: 404 });
       }
       effectiveCourseId = targetCourseId;
+
+      // Update the course with the new academic title and department subject
+      if (finalCourseTitle) {
+        await supabase
+          .from("courses")
+          .update({
+            title: finalCourseTitle,
+            subject: finalCourseSubject,
+          })
+          .eq("id", effectiveCourseId);
+      }
+
+      // If this is a new AI curriculum ingestion, clear old concepts to prevent mixing subjects
+      if (!clientConcepts || clientConcepts.length === 0) {
+        await supabase.from("concept_edges").delete().eq("course_id", effectiveCourseId);
+        await supabase.from("questions").delete().eq("course_id", effectiveCourseId);
+        await supabase.from("concepts").delete().eq("course_id", effectiveCourseId);
+      }
     }
 
 

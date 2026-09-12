@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -49,7 +49,25 @@ export function CourseAuthoringClient({
   const [concepts, setConcepts] = useState<Concept[]>(initialConcepts);
   const [edges, setEdges] = useState<Edge[]>(initialEdges);
   const [questions, setQuestions] = useState<Question[]>(initialQuestions);
+  const [courseState, setCourseState] = useState(course);
   const [deletingCourse, setDeletingCourse] = useState(false);
+
+  // Sync state when initial props update (e.g. after AI ingestion or router.refresh)
+  useEffect(() => {
+    setCourseState(course);
+  }, [course]);
+
+  useEffect(() => {
+    setConcepts(initialConcepts);
+  }, [initialConcepts]);
+
+  useEffect(() => {
+    setEdges(initialEdges);
+  }, [initialEdges]);
+
+  useEffect(() => {
+    setQuestions(initialQuestions);
+  }, [initialQuestions]);
 
   const conceptMap = new Map(concepts.map((c) => [c.id, c.name]));
 
@@ -182,13 +200,13 @@ export function CourseAuthoringClient({
         </Link>
         <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-start sm:justify-end">
           <SyllabusIngestionModal
-            courseId={course.id}
-            courseTitle={course.title}
-            courseSubject={course.subject}
+            courseId={courseState.id}
+            courseTitle={courseState.title}
+            courseSubject={courseState.subject}
             onSuccess={() => router.refresh()}
           />
           <Badge variant="outline" className="text-xs font-bold px-3 py-1 rounded-xs border-2 border-border bg-accent-yellow/20 text-foreground shadow-[1px_1px_0px_var(--shadow-color)]">
-            {course.subject}
+            {courseState.subject}
           </Badge>
 
           <Button
@@ -217,7 +235,7 @@ export function CourseAuthoringClient({
             <BookOpen className="h-6 w-6" />
           </div>
           <div className="min-w-0">
-            <h1 className="text-2xl font-bold text-foreground truncate">{course.title}</h1>
+            <h1 className="text-2xl font-bold text-foreground truncate">{courseState.title}</h1>
             <p className="text-sm text-muted-foreground">
               Add lessons, set up recommended learning order, and write practice quiz questions.
             </p>
